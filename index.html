@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>✨ AI 手势画板 Pro</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+</head>
+<body>
+    <div class="header">
+        <h1>✨ AI 手势画板 Pro</h1>
+        <div class="header-info">
+            <div class="status-indicator">
+                <span class="status-dot"></span>
+                <span id="statusText">正在初始化...</span>
+            </div>
+            <div class="performance-display" id="perfDisplay">-- FPS</div>
+        </div>
+        <a href="camera-fix.html" class="fix-link">
+            🔧 摄像头故障？点击诊断
+        </a>
+    </div>
+    
+    <!-- 科技感网格背景 -->
+    <div class="tech-grid"></div>
+    <canvas class="particles-bg" id="bgParticles"></canvas>
+    
+    <div class="container">
+        <video class="input_video" style="display: none;"></video>
+        <canvas class="output_canvas" width="1280px" height="720px"></canvas>
+        <canvas class="drawing_canvas" width="1280px" height="720px"></canvas>
+        <canvas class="particle_canvas" width="1280px" height="720px"></canvas>
+        
+        <!-- 增强的手势状态指示器 -->
+        <div class="gesture-indicator">
+            <div class="gesture-icon">✋</div>
+            <div class="gesture-info">
+                <div class="gesture-text">捏合绘画</div>
+                <div class="gesture-distance" id="gestureDistance">--</div>
+            </div>
+        </div>
+        
+        <!-- 手指追踪光标 -->
+        <div class="finger-cursor" id="fingerCursor"></div>
+    </div>
+    
+    <div class="control-panel">
+        <!-- 颜色选择区 -->
+        <div class="toolbar-section">
+            <h3>🎨 颜色</h3>
+            <div class="color-palette">
+                <div class="color-swatch" data-color="#ff0080" style="background: linear-gradient(135deg, #ff0080, #ff8c00);"></div>
+                <div class="color-swatch" data-color="#00ffff" style="background: linear-gradient(135deg, #00ffff, #0080ff);"></div>
+                <div class="color-swatch" data-color="#ff3b30" style="background-color: #ff3b30;"></div>
+                <div class="color-swatch" data-color="#ff9500" style="background-color: #ff9500;"></div>
+                <div class="color-swatch" data-color="#ffcc00" style="background-color: #ffcc00;"></div>
+                <div class="color-swatch" data-color="#4cd964" style="background-color: #4cd964;"></div>
+                <div class="color-swatch" data-color="#5ac8fa" style="background-color: #5ac8fa;"></div>
+                <div class="color-swatch" data-color="#007aff" style="background-color: #007aff;"></div>
+                <div class="color-swatch" data-color="#5856d6" style="background-color: #5856d6;"></div>
+                <div class="color-swatch" data-color="#ff2d55" style="background-color: #ff2d55;"></div>
+                <div class="color-swatch" data-color="#ffffff" style="background-color: #ffffff;"></div>
+                <div class="color-swatch rainbow" data-color="rainbow">
+                    <span>🌈</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 笔刷类型 -->
+        <div class="toolbar-section">
+            <h3>🖌️ 笔刷</h3>
+            <div class="brush-types">
+                <button class="brush-type active" data-type="normal">✏️ 普通</button>
+                <button class="brush-type" data-type="glow">✨ 发光</button>
+                <button class="brush-type" data-type="spray">💨 喷枪</button>
+                <button class="brush-type" data-type="neon">🌟 霓虹</button>
+            </div>
+        </div>
+        
+        <!-- 笔刷设置 -->
+        <div class="toolbar-section">
+            <h3>⚙️ 设置</h3>
+            <div class="slider-container">
+                <label for="brushSize">笔刷大小: <span id="brushSizeValue">5</span></label>
+                <input type="range" id="brushSize" min="1" max="50" value="5">
+            </div>
+            <div class="slider-container">
+                <label for="opacity">透明度: <span id="opacityValue">100</span>%</label>
+                <input type="range" id="opacity" min="10" max="100" value="100">
+            </div>
+        </div>
+        
+        <!-- 工具按钮 -->
+        <div class="toolbar-section">
+            <h3>🛠️ 工具</h3>
+            <div class="tool-buttons">
+                <button id="eraserBtn" class="tool-btn">🧹 橡皮擦</button>
+                <button id="undoBtn" class="tool-btn">↶ 撤销</button>
+                <button id="redoBtn" class="tool-btn">↷ 重做</button>
+                <button id="clearBtn" class="tool-btn danger">🗑️ 清空</button>
+            </div>
+        </div>
+        
+        <!-- 背景选择 -->
+        <div class="toolbar-section">
+            <h3>🖼️ 背景</h3>
+            <div class="background-options">
+                <button class="bg-option active" data-bg="transparent">透明</button>
+                <button class="bg-option" data-bg="black">黑色</button>
+                <button class="bg-option" data-bg="white">白色</button>
+                <button class="bg-option" data-bg="grid">网格</button>
+            </div>
+        </div>
+        
+        <!-- 特效开关 -->
+        <div class="toolbar-section">
+            <h3>✨ 特效</h3>
+            <div class="effect-toggles">
+                <label class="toggle-switch">
+                    <input type="checkbox" id="particleEffect" checked>
+                    <span class="toggle-slider"></span>
+                    <span class="toggle-label">粒子效果</span>
+                </label>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="trailEffect">
+                    <span class="toggle-slider"></span>
+                    <span class="toggle-label">轨迹拖尾</span>
+                </label>
+            </div>
+        </div>
+        
+        <!-- 导出按钮 -->
+        <div class="toolbar-section">
+            <button id="saveBtn" class="save-btn">💾 保存作品</button>
+        </div>
+    </div>
+    
+    <div class="loading">
+        <div class="spinner"></div>
+        <p>正在加载 AI 模型...</p>
+        <div class="loading-bar">
+            <div class="loading-progress"></div>
+        </div>
+    </div>
+    
+    <script src="script.js"></script>
+</body>
+</html>
