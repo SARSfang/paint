@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🌟 AI 画板数据可视化仪表盘</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', 'Consolas', monospace;
+            background: #000000;
+            color: #00ff00;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* 动态网格背景 */
+        .cyber-grid {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: 
+                linear-gradient(rgba(0, 255, 255, 0.1) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 255, 255, 0.1) 1px, transparent 1px);
+            background-size: 40px 40px;
+            animation: gridScroll 20s linear infinite;
+            z-index: 0;
+        }
+
+        @keyframes gridScroll {
+            0% { transform: perspective(500px) rotateX(60deg) translateY(0); }
+            100% { transform: perspective(500px) rotateX(60deg) translateY(40px); }
+        }
+
+        /* 扫描线效果 */
+        .scanline {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: linear-gradient(transparent, rgba(0, 255, 255, 0.8), transparent);
+            animation: scan 3s linear infinite;
+            z-index: 100;
+            pointer-events: none;
+        }
+
+        @keyframes scan {
+            0% { transform: translateY(0); }
+            100% { transform: translateY(100vh); }
+        }
+
+        /* 主容器 */
+        .dashboard {
+            position: relative;
+            z-index: 1;
+            display: grid;
+            grid-template-columns: 1fr 400px;
+            grid-template-rows: auto 1fr auto;
+            height: 100vh;
+            gap: 10px;
+            padding: 10px;
+        }
+
+        /* 头部 */
+        .header {
+            grid-column: 1 / -1;
+            background: rgba(0, 20, 40, 0.9);
+            border: 2px solid #00ffff;
+            border-radius: 10px;
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 0 30px rgba(0, 255, 255, 0.5), inset 0 0 20px rgba(0, 100, 100, 0.3);
+            animation: headerPulse 2s ease-in-out infinite;
+        }
+
+        @keyframes headerPulse {
+            0%, 100% { box-shadow: 0 0 30px rgba(0, 255, 255, 0.5), inset 0 0 20px rgba(0, 100, 100, 0.3); }
+            50% { box-shadow: 0 0 50px rgba(0, 255, 255, 0.8), inset 0 0 30px rgba(0, 150, 150, 0.5); }
+        }
+
+        .header h1 {
+            font-size: 2em;
+            color: #00ffff;
+            text-shadow: 0 0 20px #00ffff, 0 0 40px #00ffff;
+            letter-spacing: 3px;
+            animation: titleFlicker 4s ease-in-out infinite;
+        }
+
+        @keyframes titleFlicker {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.8; }
+            51% { opacity: 1; }
+            52% { opacity: 0.9; }
+            53% { opacity: 1; }
+        }
+
+        .status-bar {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+
+        .model-controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.9em;
+        }
+
+        .model-controls span {
+            margin-right: 15px;
+        }
+
+        /* 开关样式 */
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 40px;
+            height: 20px;
+        }
+
+        .switch input { 
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #333;
+            border: 1px solid #00ffff;
+            transition: .4s;
+            border-radius: 20px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 12px;
+            width: 12px;
+            left: 4px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: #008080;
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(18px);
+        }
+
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 15px;
+            background: rgba(0, 100, 100, 0.3);
+            border: 1px solid #00ffff;
+            border-radius: 5px;
+            font-size: 0.9em;
+        }
+
+        .status-led {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #00ff00;
+            box-shadow: 0 0 10px #00ff00, 0 0 20px #00ff00;
+            animation: ledBlink 1s ease-in-out infinite;
+        }
+
+        @keyframes ledBlink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        /* 主视频区域 */
+        .main-view {
+            background: rgba(0, 20, 40, 0.8);
+            border: 2px solid #00ffff;
+            border-radius: 10px;
+            overflow: hidden;
+            position: relative;
+            box-shadow: 0 0 30px rgba(0, 255, 255, 0.3);
+        }
+
+        .video-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        video, canvas {
+            max-width: 100%;
+            max-height: 100%;
+            border-radius: 8px;
+        }
+
+        .input_video {
+            display: none;
+        }
+
+        .output_canvas {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 90%;
+            height: 90%;
+            object-fit: contain;
+        }
+
+        /* 数据覆盖层 */
+        .data-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            pointer-events: none;
+        }
+
+        .landmark-label {
+            position: absolute;
+            background: rgba(0, 255, 255, 0.8);
+            color: #000;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 10px;
+            font-weight: bold;
+            transform: translate(-50%, -100%);
+            white-space: nowrap;
+            box-shadow: 0 0 10px rgba(0, 255, 255, 0.5);
+        }
+
+        /* 侧边栏 */
+        .sidebar {
+            background: rgba(0, 20, 40, 0.9);
+            border: 2px solid #00ffff;
+            border-radius: 10px;
+            padding: 15px;
+            overflow-y: auto;
+            box-shadow: 0 0 30px rgba(0, 255, 255, 0.3);
+        }
+
+        .sidebar::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .sidebar::-webkit-scrollbar-track {
+            background: rgba(0, 50, 50, 0.3);
+        }
+
+        .sidebar::-webkit-scrollbar-thumb {
+            background: #00ffff;
+            border-radius: 4px;
+        }
+
+        .panel {
+            background: rgba(0, 50, 50, 0.3);
+            border: 1px solid #00ffff;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 15px;
+        }
+
+        .panel h3 {
+            color: #00ffff;
+            font-size: 1.1em;
+            margin-bottom: 10px;
+            text-shadow: 0 0 10px #00ffff;
+            border-bottom: 1px solid rgba(0, 255, 255, 0.3);
+            padding-bottom: 5px;
+        }
+
+        .data-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 6px 0;
+            font-size: 0.85em;
+            border-bottom: 1px solid rgba(0, 255, 255, 0.1);
+        }
+
+        .data-label {
+            color: #00ffaa;
+        }
+
+        .data-value {
+            color: #00ffff;
+            font-weight: bold;
+            font-family: 'Consolas', monospace;
+        }
+
+        /* 3D 手部模型显示 */
+        .hand-3d-view {
+            width: 100%;
+            height: 200px;
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid #00ffff;
+            border-radius: 5px;
+            margin-top: 10px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        #hand3DCanvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* 热力图 */
+        .heatmap-container {
+            width: 100%;
+            height: 150px;
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid #00ffff;
+            border-radius: 5px;
+            margin-top: 10px;
+            position: relative;
+        }
+
+        #heatmapCanvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* 图表容器 */
+        .chart-container {
+            width: 100%;
+            height: 120px;
+            margin-top: 10px;
+        }
+
+        /* 底部控制面板 */
+        .bottom-panel {
+            grid-column: 1 / -1;
+            background: rgba(0, 20, 40, 0.9);
+            border: 2px solid #00ffff;
+            border-radius: 10px;
+            padding: 15px;
+            display: flex;
+            gap: 15px;
+            box-shadow: 0 0 30px rgba(0, 255, 255, 0.3);
+        }
+
+        .metric-box {
+            flex: 1;
+            background: rgba(0, 50, 50, 0.3);
+            border: 1px solid #00ffff;
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+        }
+
+        .metric-label {
+            color: #00ffaa;
+            font-size: 0.8em;
+            margin-bottom: 5px;
+            text-transform: uppercase;
+        }
+
+        .metric-value {
+            color: #00ffff;
+            font-size: 2em;
+            font-weight: bold;
+            font-family: 'Consolas', monospace;
+            text-shadow: 0 0 20px #00ffff;
+        }
+
+        .metric-unit {
+            color: #00ff00;
+            font-size: 0.7em;
+            margin-left: 5px;
+        }
+
+        /* 粒子系统可视化 */
+        .particle-viz {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 2;
+        }
+
+        /* 手势识别面板 */
+        .gesture-display {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 10px;
+        }
+
+        .gesture-badge {
+            background: rgba(0, 100, 100, 0.3);
+            border: 1px solid #00ffff;
+            border-radius: 15px;
+            padding: 5px 12px;
+            font-size: 0.75em;
+            color: #00ffff;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .gesture-badge.active {
+            background: rgba(0, 255, 255, 0.3);
+            animation: badgePulse 1s ease-in-out infinite;
+        }
+
+        @keyframes badgePulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+
+        /* 矩阵雨效果 */
+        #matrixCanvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            opacity: 0.05;
+            pointer-events: none;
+        }
+
+        /* 加载动画 */
+        .loading-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.95);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .loading-spinner {
+            width: 80px;
+            height: 80px;
+            border: 4px solid rgba(0, 255, 255, 0.1);
+            border-top: 4px solid #00ffff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            box-shadow: 0 0 30px rgba(0, 255, 255, 0.5);
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .loading-text {
+            margin-top: 20px;
+            color: #00ffff;
+            font-size: 1.2em;
+            text-shadow: 0 0 10px #00ffff;
+        }
+
+        /* 响应式设计 */
+        @media (max-width: 1200px) {
+            .dashboard {
+                grid-template-columns: 1fr;
+                grid-template-rows: auto 1fr auto auto;
+            }
+            
+            .sidebar {
+                grid-column: 1;
+                max-height: 400px;
+            }
+        }
+
+        /* 数据流动效果 */
+        .data-stream {
+            position: absolute;
+            width: 2px;
+            height: 20px;
+            background: linear-gradient(to bottom, transparent, #00ffff);
+            animation: streamFlow 2s linear infinite;
+        }
+
+        @keyframes streamFlow {
+            0% { transform: translateY(-20px); opacity: 0; }
+            50% { opacity: 1; }
+            100% { transform: translateY(100vh); opacity: 0; }
+        }
+    </style>
+</head>
+<body>
+    <!-- 矩阵雨背景 -->
+    <canvas id="matrixCanvas"></canvas>
+    
+    <!-- 网格背景 -->
+    <div class="cyber-grid"></div>
+    
+    <!-- 扫描线 -->
+    <div class="scanline"></div>
+
+    <!-- 加载界面 -->
+    <div class="loading-screen" id="loadingScreen">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">INITIALIZING NEURAL INTERFACE...</div>
+    </div>
+
+    <!-- 主仪表盘 -->
+    <div class="dashboard">
+        <!-- 头部 -->
+        <div class="header">
+            <h1>⚡ NEURAL VISION DASHBOARD ⚡</h1>
+            <div class="model-controls">
+                <label class="switch">
+                    <input type="checkbox" id="handsToggle" checked>
+                    <span class="slider"></span>
+                </label>
+                <span>👋 Hands</span>
+                <label class="switch">
+                    <input type="checkbox" id="faceToggle" checked>
+                    <span class="slider"></span>
+                </label>
+                <span>👽 Face</span>
+                <label class="switch">
+                    <input type="checkbox" id="poseToggle" checked>
+                    <span class="slider"></span>
+                </label>
+                <span>🤸 Pose</span>
+            </div>
+            <div class="status-bar">
+                <div class="status-item">
+                    <div class="status-led"></div>
+                    <span id="systemStatus">ONLINE</span>
+                </div>
+                <div class="status-item">
+                    <span>⏱ <span id="uptime">00:00:00</span></span>
+                </div>
+                <div class="status-item">
+                    <span>🎯 <span id="detectionRate">0%</span></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 主视频区域 -->
+        <div class="main-view">
+            <div class="video-container">
+                <video class="input_video"></video>
+                <canvas class="output_canvas" width="1280" height="720"></canvas>
+                <div class="data-overlay" id="dataOverlay"></div>
+                <canvas class="particle-viz" id="particleCanvas" width="1280" height="720"></canvas>
+            </div>
+        </div>
+
+        <!-- 侧边数据面板 -->
+        <div class="sidebar">
+            <!-- 手部追踪数据 -->
+            <div class="panel">
+                <h3>👋 HAND TRACKING DATA</h3>
+                <div class="data-row">
+                    <span class="data-label">Hands Detected:</span>
+                    <span class="data-value" id="handsCount">0</span>
+                </div>
+                <div class="data-row">
+                    <span class="data-label">Handedness:</span>
+                    <span class="data-value" id="handedness">N/A</span>
+                </div>
+            </div>
+
+            <!-- 面部追踪数据 -->
+            <div class="panel">
+                <h3>👽 FACE TRACKING DATA</h3>
+                <div class="data-row">
+                    <span class="data-label">Faces Detected:</span>
+                    <span class="data-value" id="facesCount">0</span>
+                </div>
+                <div class="data-row">
+                    <span class="data-label">Landmarks:</span>
+                    <span class="data-value" id="faceLandmarkCount">0</span>
+                </div>
+            </div>
+
+            <!-- 身体姿态数据 -->
+            <div class="panel">
+                <h3>🤸 POSE TRACKING DATA</h3>
+                <div class="data-row">
+                    <span class="data-label">Poses Detected:</span>
+                    <span class="data-value" id="posesCount">0</span>
+                </div>
+                <div class="data-row">
+                    <span class="data-label">Landmarks:</span>
+                    <span class="data-value" id="poseLandmarkCount">0</span>
+                </div>
+                <div class="data-row">
+                    <span class="data-label">Visibility:</span>
+                    <span class="data-value" id="poseVisibility">0%</span>
+                </div>
+            </div>
+
+            <!-- 手势识别 -->
+            <div class="panel">
+                <h3>✋ GESTURE RECOGNITION</h3>
+                <div class="gesture-display" id="gestureDisplay">
+                    <div class="gesture-badge">👆 POINTING</div>
+                    <div class="gesture-badge">✌️ PEACE</div>
+                    <div class="gesture-badge">👌 OK</div>
+                    <div class="gesture-badge">✊ FIST</div>
+                    <div class="gesture-badge">🖐️ OPEN PALM</div>
+                    <div class="gesture-badge">🤏 PINCH</div>
+                </div>
+                <div class="data-row">
+                    <span class="data-label">Active Gesture:</span>
+                    <span class="data-value" id="activeGesture">NONE</span>
+                </div>
+                <div class="data-row">
+                    <span class="data-label">Pinch Distance:</span>
+                    <span class="data-value" id="pinchDistance">0.000</span>
+                </div>
+            </div>
+
+            <!-- 3D 手部可视化 -->
+            <div class="panel">
+                <h3>🎮 3D HAND MODEL</h3>
+                <div class="hand-3d-view">
+                    <canvas id="hand3DCanvas"></canvas>
+                </div>
+            </div>
+
+            <!-- 指尖位置 -->
+            <div class="panel">
+                <h3>📍 FINGER POSITIONS</h3>
+                <div id="fingerPositions">
+                    <div class="data-row">
+                        <span class="data-label">L-Index:</span>
+                        <span class="data-value" id="leftIndexPos">N/A</span>
+                    </div>
+                    <div class="data-row">
+                        <span class="data-label">R-Index:</span>
+                        <span class="data-value" id="rightIndexPos">N/A</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 运动追踪 -->
+            <div class="panel">
+                <h3>🏃 MOTION TRACKING</h3>
+                <div class="data-row">
+                    <span class="data-label">Velocity:</span>
+                    <span class="data-value" id="velocity">0.00 px/s</span>
+                </div>
+                <div class="data-row">
+                    <span class="data-label">Acceleration:</span>
+                    <span class="data-value" id="acceleration">0.00 px/s²</span>
+                </div>
+                <div class="data-row">
+                    <span class="data-label">Movement:</span>
+                    <span class="data-value" id="movement">STATIC</span>
+                </div>
+                <div class="chart-container">
+                    <canvas id="motionChart"></canvas>
+                </div>
+            </div>
+
+            <!-- 热力图 -->
+            <div class="panel">
+                <h3>🔥 INTERACTION HEATMAP</h3>
+                <div class="heatmap-container">
+                    <canvas id="heatmapCanvas"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- 底部性能指标 -->
+        <div class="bottom-panel">
+            <div class="metric-box">
+                <div class="metric-label">Frame Rate</div>
+                <div class="metric-value">
+                    <span id="fps">60</span>
+                    <span class="metric-unit">FPS</span>
+                </div>
+            </div>
+            <div class="metric-box">
+                <div class="metric-label">Latency</div>
+                <div class="metric-value">
+                    <span id="latency">16</span>
+                    <span class="metric-unit">MS</span>
+                </div>
+            </div>
+            <div class="metric-box">
+                <div class="metric-label">Particles</div>
+                <div class="metric-value">
+                    <span id="particles">0</span>
+                    <span class="metric-unit">ACTIVE</span>
+                </div>
+            </div>
+            <div class="metric-box">
+                <div class="metric-label">CPU Usage</div>
+                <div class="metric-value">
+                    <span id="cpuUsage">45</span>
+                    <span class="metric-unit">%</span>
+                </div>
+            </div>
+            <div class="metric-box">
+                <div class="metric-label">Memory</div>
+                <div class="metric-value">
+                    <span id="memory">128</span>
+                    <span class="metric-unit">MB</span>
+                </div>
+            </div>
+            <div class="metric-box">
+                <div class="metric-label">Total Frames</div>
+                <div class="metric-value">
+                    <span id="totalFrames">0</span>
+                    <span class="metric-unit"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="visualization-dashboard.js"></script>
+</body>
+</html>

@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>简化测试 - AI 可视化</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: #000;
+            color: #0f0;
+            font-family: monospace;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            color: #0ff;
+        }
+        .status {
+            padding: 10px;
+            background: #111;
+            border: 1px solid #0ff;
+            margin-bottom: 20px;
+        }
+        .video-container {
+            position: relative;
+            width: 100%;
+            max-width: 1280px;
+            margin: 0 auto;
+        }
+        video {
+            display: none;
+        }
+        canvas {
+            width: 100%;
+            border: 2px solid #0ff;
+            display: block;
+        }
+        .log {
+            margin-top: 20px;
+            padding: 10px;
+            background: #111;
+            border: 1px solid #0f0;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .log-entry {
+            margin: 2px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔬 MediaPipe 简化测试</h1>
+        
+        <div class="status">
+            <div>状态: <span id="status">初始化中...</span></div>
+            <div>FPS: <span id="fps">0</span></div>
+            <div>检测到的手: <span id="hands">0</span></div>
+        </div>
+        
+        <div class="video-container">
+            <video class="input_video"></video>
+            <canvas class="output_canvas" width="1280" height="720"></canvas>
+        </div>
+        
+        <div class="log" id="log">
+            <div class="log-entry">等待初始化...</div>
+        </div>
+    </div>
+
+    <script>
+        const videoElement = document.querySelector('.input_video');
+        const canvasElement = document.querySelector('.output_canvas');
+        const canvasCtx = canvasElement.getContext('2d');
+        const statusEl = document.getElementById('status');
+        const fpsEl = document.getElementById('fps');
+        const handsEl = document.getElementById('hands');
+        const logEl = document.getElementById('log');
+        
+        let frameCount = 0;
+        let lastTime = Date.now();
+        
+        function log(message) {
+            console.log(message);
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logEl.insertBefore(entry, logEl.firstChild);
+            
+            // 只保留最近50条
+            while (logEl.children.length > 50) {
+                logEl.removeChild(logEl.lastChild);
+            }
+        }
+        
+        log('页面加载完成');
+        
+        // 检查库是否加载
+        log('检查 MediaPipe 库...');
+        log('Hands: ' + (typeof Hands !== 'undefined' ? '✅' : '❌'));
+        log('Camera: ' + (typeof Camera !== 'undefined' ? '✅' : '❌'));
+        log('drawConnectors: ' + (typeof drawConnectors !== 'undefined' ? '✅' : '❌'));
+        
+        function onResults(results) {
+            frameCount++;
+            const now = Date.now();
+            if (now - lastTime >= 1000) {
+                fpsEl.textContent = frameCount;
+                frameCount = 0;
+                lastTime = now;
+            }
+            
+            // 绘制
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+            
+            if (results.multiHandLandmarks) {
+                handsEl.textContent = results.multiHandLandmarks.length;
+                
+                for (const landmarks of results.multiHandLandmarks) {
+                    drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 5});
+                    drawLandmarks(canvasCtx, landmarks, {color: '#FF0000', lineWidth: 2});
+                }
+            } else {
+                handsEl.textContent = '0';
+            }
+            
+            canvasCtx.restore();
+        }
+        
+        log('初始化 Hands 模型...');
+        const hands = new Hands({
+            locateFile: (file) => {
+                log(`加载文件: ${file}`);
+                return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+            }
+        });
+        
+        hands.setOptions({
+            maxNumHands: 2,
+            modelComplexity: 0,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+        
+        hands.onResults(onResults);
+        log('Hands 模型配置完成');
+        
+        log('初始化摄像头...');
+        const camera = new Camera(videoElement, {
+            onFrame: async () => {
+                await hands.send({image: videoElement});
+            },
+            width: 1280,
+            height: 720
+        });
+        
+        camera.start()
+            .then(() => {
+                log('✅ 摄像头启动成功！');
+                statusEl.textContent = '运行中 ✅';
+                statusEl.style.color = '#0f0';
+            })
+            .catch((error) => {
+                log('❌ 摄像头启动失败: ' + error.message);
+                statusEl.textContent = '错误 ❌';
+                statusEl.style.color = '#f00';
+                alert('摄像头启动失败：\n' + error.message + '\n\n请检查浏览器权限设置');
+            });
+    </script>
+</body>
+</html>
